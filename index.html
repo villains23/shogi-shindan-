@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>振り飛車／居飛車 戦型選択診断</title>
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;line-height:1.5;margin:0;background:#f6f7f9;color:#111}
+    header{padding:18px 16px;background:#111;color:#fff}
+    header h1{font-size:18px;margin:0 0 6px}
+    header p{margin:0;font-size:13px;opacity:.9}
+    main{max-width:900px;margin:0 auto;padding:16px}
+    .card{background:#fff;border-radius:12px;padding:14px 14px;margin:12px 0;box-shadow:0 1px 8px rgba(0,0,0,.06)}
+    .meta{font-size:12px;color:#666;margin-bottom:6px}
+    .qtext{font-size:16px;margin:0 0 10px}
+    .choices{display:flex;gap:10px;flex-wrap:wrap}
+    label.choice{border:1px solid #ddd;border-radius:999px;padding:10px 12px;display:inline-flex;align-items:center;gap:8px;cursor:pointer;background:#fff}
+    input[type="radio"]{transform:scale(1.1)}
+    .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+    button{border:0;border-radius:10px;padding:12px 14px;cursor:pointer;font-weight:700}
+    button.primary{background:#111;color:#fff}
+    button.ghost{background:#e9eaee;color:#111}
+    .result{border:2px solid #111}
+    .result h2{margin:0 0 8px;font-size:18px}
+    .pill{display:inline-block;padding:6px 10px;border-radius:999px;background:#111;color:#fff;font-size:12px;margin-right:6px}
+    .warn{color:#b00020;font-size:12px;margin-top:8px}
+    details{margin-top:10px}
+    .small{font-size:12px;color:#555}
+  </style>
+</head>
+<body>
+<header>
+  <h1>振り飛車／居飛車 戦型選択診断（15問）</h1>
+  <p>タップで回答 → 自動採点。将棋未経験でも答えられる設計。</p>
+</header>
+
+<main>
+  <div class="card">
+    <div class="row">
+      <button class="primary" id="btnCalc">採点する</button>
+      <button class="ghost" id="btnReset" type="button">リセット</button>
+      <span class="small">※全問回答が理想（未回答があると判定がブレます）</span>
+    </div>
+    <div id="status" class="warn" style="display:none;"></div>
+  </div>
+
+  <div id="questions"></div>
+
+  <div class="card result" id="result" style="display:none;">
+    <h2>判定結果</h2>
+    <div id="scoreline"></div>
+    <p id="verdict" style="margin:10px 0 0;"></p>
+    <details>
+      <summary>どういう意味の判定？（補足）</summary>
+      <p class="small" style="margin-top:8px;">
+        この診断は「強くなる戦型」ではなく、初心者が<strong>挫折しにくい入口</strong>（続けやすさ）を当てに行きます。<br>
+        迷いにくさ・安心感・受け止めて反撃する快感は振り飛車に寄りやすく、変化対応・主体的に動く快感は居飛車に寄りやすい、という仮説で設計しています。
+      </p>
+    </details>
+  </div>
+</main>
+
+<script>
+  // ====== 質問データ ======
+  // pick: "yes" を選んだときに加点される側（"furi" or "ibi"）
+  const items = [
+    // 軸① 序盤耐性
+    { axis:"軸① 序盤耐性", text:"最初は自由にやるより、型やテンプレートがあった方が安心する", pick:"furi" },
+    { axis:"軸① 序盤耐性", text:"選択肢が多い状況より、「やることが決まっている」方が動きやすい", pick:"furi" },
+    { axis:"軸① 序盤耐性", text:"最初の方向性が曖昧なまま進むのはストレスに感じやすい", pick:"furi" },
+
+    // 軸② 安定 vs 攻撃
+    { axis:"軸② 安定 vs 攻撃", text:"チャンスがありそうなら、多少の不安があっても動きたい", pick:"ibi" },
+    { axis:"軸② 安定 vs 攻撃", text:"成功率が低そうな選択は、基本的に避ける", pick:"furi" },
+    { axis:"軸② 安定 vs 攻撃", text:"「安全だけど地味」より「リスクはあるが面白い」を選びがちだ", pick:"ibi" },
+
+    // 軸③ 相手対応力
+    { axis:"軸③ 相手対応力", text:"相手の出方に合わせて、自分のやり方を変えるのは苦にならない", pick:"ibi" },
+    { axis:"軸③ 相手対応力", text:"周りに合わせるより、自分のペースを保つ方が大事だ", pick:"furi" },
+    { axis:"軸③ 相手対応力", text:"状況が変わるたびに方針を考え直すのは楽しい", pick:"ibi" },
+
+    // 軸④ 感情トリガー
+    { axis:"軸④ 感情トリガー", text:"何もできないまま流れで負けるのが一番つらい", pick:"ibi" },
+    { axis:"軸④ 感情トリガー", text:"頑張って守ったのに、一気に崩れる展開が苦手だ", pick:"furi" },
+    { axis:"軸④ 感情トリガー", text:"自分から動かずに終わると、後悔が強く残る", pick:"ibi" },
+
+    // 軸⑤ 将棋観
+    { axis:"軸⑤ 将棋観", text:"相手が動いたところを受け止めて、反撃でひっくり返すのが好き", pick:"furi" },
+    { axis:"軸⑤ 将棋観", text:"相手の裏をかいたり、意表を突くのが楽しい", pick:"furi" },
+    { axis:"軸⑤ 将棋観", text:"展開が激しく動く方がワクワクする", pick:"ibi" },
+  ];
+
+  const elQs = document.getElementById("questions");
+  const elResult = document.getElementById("result");
+  const elScoreline = document.getElementById("scoreline");
+  const elVerdict = document.getElementById("verdict");
+  const elStatus = document.getElementById("status");
+
+  // ====== UI生成 ======
+  function render(){
+    elQs.innerHTML = "";
+    let currentAxis = "";
+    items.forEach((it, idx) => {
+      const qno = idx + 1;
+
+      // 軸見出し
+      if (it.axis !== currentAxis) {
+        currentAxis = it.axis;
+        const h = document.createElement("div");
+        h.className = "card";
+        h.innerHTML = `<div class="meta"><span class="pill">${currentAxis}</span> この3問は同じ観点（軸）です</div>`;
+        elQs.appendChild(h);
+      }
+
+      const card = document.createElement("div");
+      card.className = "card";
+      card.innerHTML = `
+        <div class="meta">Q${qno}</div>
+        <p class="qtext">${escapeHtml(it.text)}</p>
+        <div class="choices">
+          <label class="choice">
+            <input type="radio" name="q${qno}" value="yes" />
+            はい
+          </label>
+          <label class="choice">
+            <input type="radio" name="q${qno}" value="no" />
+            いいえ
+          </label>
+        </div>
+      `;
+      elQs.appendChild(card);
+
+      // タップ即時で計算したい場合はここでイベントを付けてもOK
+    });
+  }
+
+  function escapeHtml(s){
+    return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  // ====== 採点 ======
+  function calc(){
+    let furi = 0, ibi = 0;
+    let unanswered = [];
+
+    items.forEach((it, idx) => {
+      const qno = idx + 1;
+      const selected = document.querySelector(`input[name="q${qno}"]:checked`);
+      if (!selected) {
+        unanswered.push(qno);
+        return;
+      }
+      const ans = selected.value; // "yes" or "no"
+      // yesでpick側に+1、noで反対側に+1
+      const yesSide = it.pick;
+      const noSide = (it.pick === "furi") ? "ibi" : "furi";
+      const side = (ans === "yes") ? yesSide : noSide;
+      if (side === "furi") furi++;
+      else ibi++;
+    });
+
+    // ステータス表示
+    if (unanswered.length > 0) {
+      elStatus.style.display = "block";
+      elStatus.textContent = `未回答があります（Q${unanswered.join(", Q")}）。全問回答すると判定が安定します。`;
+    } else {
+      elStatus.style.display = "none";
+      elStatus.textContent = "";
+    }
+
+    const totalAnswered = furi + ibi;
+
+    // 判定（回答数が少ない場合も動くように割合で見る）
+    let verdictTitle = "";
+    let verdictBody = "";
+
+    const diff = furi - ibi; // +なら振り優勢
+    // 目安：15問なら差が3以上で「推奨」くらいの強さ
+    const strong = Math.max(2, Math.round(totalAnswered * 0.2)); // 回答数に応じて閾値可変
+
+    if (diff >= strong) {
+      verdictTitle = "振り飛車スタート推奨";
+      verdictBody =
+        "再現性・自分のペース・受け止めて反撃の快感が軸になりやすいタイプ。まずは「形を作って戦う」入口が挫折しにくいはず。";
+    } else if (diff <= -strong) {
+      verdictTitle = "居飛車スタート推奨";
+      verdictBody =
+        "変化対応・主体的に動く快感・展開の躍動感が軸になりやすいタイプ。まずは「主導権を取りに行く」入口が伸びやすいはず。";
+    } else {
+      verdictTitle = "ハイブリッド型（どちらでもOK）";
+      verdictBody =
+        "適性が拮抗しています。最初は振り飛車で迷子を減らしつつ、途中で居飛車も触る（または逆）など、両方を試して「楽しい方」を主戦型にすると良いです。";
+    }
+
+    elScoreline.innerHTML = `
+      <p style="margin:0;">
+        <span class="pill">振り飛車 ${furi}</span>
+        <span class="pill">居飛車 ${ibi}</span>
+        <span class="small">（回答数 ${totalAnswered} / 15）</span>
+      </p>
+    `;
+    elVerdict.innerHTML = `<strong>${verdictTitle}</strong><br>${verdictBody}`;
+    elResult.style.display = "block";
+    elResult.scrollIntoView({behavior:"smooth", block:"start"});
+  }
+
+  function resetAll(){
+    document.querySelectorAll('input[type="radio"]').forEach(r => r.checked = false);
+    elResult.style.display = "none";
+    elStatus.style.display = "none";
+    elStatus.textContent = "";
+    window.scrollTo({top:0, behavior:"smooth"});
+  }
+
+  document.getElementById("btnCalc").addEventListener("click", calc);
+  document.getElementById("btnReset").addEventListener("click", resetAll);
+
+  render();
+</script>
+</body>
+</html>
