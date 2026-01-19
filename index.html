@@ -31,15 +31,14 @@
 <body>
 <header>
   <h1>振り飛車／居飛車 戦型選択診断（15問）</h1>
-  <p>タップで回答 → 自動採点。将棋未経験でも答えられる設計。</p>
+  <p>タップで回答 → 全問回答した瞬間に自動採点します（将棋未経験でもOK）。</p>
 </header>
 
 <main>
   <div class="card">
     <div class="row">
-      <button class="primary" id="btnCalc">採点する</button>
       <button class="ghost" id="btnReset" type="button">リセット</button>
-      <span class="small">※全問回答が理想（未回答があると判定がブレます）</span>
+      <span class="small">※全問回答すると自動で結果が表示されます</span>
     </div>
     <div id="status" class="warn" style="display:none;"></div>
   </div>
@@ -54,7 +53,9 @@
       <summary>どういう意味の判定？（補足）</summary>
       <p class="small" style="margin-top:8px;">
         この診断は「強くなる戦型」ではなく、初心者が<strong>挫折しにくい入口</strong>（続けやすさ）を当てに行きます。<br>
-        迷いにくさ・安心感・受け止めて反撃する快感は振り飛車に寄りやすく、変化対応・主体的に動く快感は居飛車に寄りやすい、という仮説で設計しています。
+        迷いにくく安心して指したい人や、相手の動きを受け止めてから反撃する展開が好きな人は振り飛車に向きやすく、
+変化に対応しながら自分から動いていく展開が好きな人は居飛車に向きやすい、
+という考え方をもとに、この診断を作っています。
       </p>
     </details>
   </div>
@@ -96,6 +97,92 @@
   const elVerdict = document.getElementById("verdict");
   const elStatus = document.getElementById("status");
 
+  function escapeHtml(s){
+    return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  // ====== 採点 ======
+  function calc(){
+    let furi = 0, ibi = 0;
+    let unanswered = [];
+
+    items.forEach((it, idx) => {
+      const qno = idx + 1;
+      const selected = document.querySelector(`input[name="q${qno}"]:checked`);
+      if (!selected) {
+        unanswered.push(qno);
+        return;
+      }
+      const ans = selected.value; // "yes" or "no"
+      // yesでpick側に+1、noで反対側に+1
+      const yesSide = it.pick;
+      const noSide = (it.pick === "furi") ? "ibi" : "furi";
+      const side = (ans === "yes") ? yesSide : noSide;
+      if (side === "furi") furi++;
+      else ibi++;
+    });
+
+    const totalAnswered = furi + ibi;
+
+    // 全問回答でない限り、結果は出さない（完全自動のため）
+    if (unanswered.length > 0) {
+      elStatus.style.display = "block";
+      elStatus.textContent = `未回答があります（Q${unanswered.join(", Q")}）。全問回答すると自動で結果が表示されます。`;
+      elResult.style.display = "none";
+      return;
+    } else {
+      elStatus.style.display = "none";
+      elStatus.textContent = "";
+    }
+
+    // 判定（差分で判定）
+    let verdictTitle = "";
+    let verdictBody = "";
+
+    const diff = furi - ibi; // +なら振り優勢
+    const strong = 3; // 15問なら差3以上で推奨
+
+    if (diff >= strong) {
+      verdictTitle = "振り飛車スタート推奨";
+      verdictBody =
+        "再現性・自分のペース・受け止めて反撃の快感が軸になりやすいタイプ。まずは「形を作って戦う」入口が挫折しにくいはず。";
+    } else if (diff <= -strong) {
+      verdictTitle = "居飛車スタート推奨";
+      verdictBody =
+        "変化対応・主体的に動く快感・展開の躍動感が軸になりやすいタイプ。まずは「主導権を取りに行く」入口が伸びやすいはず。";
+    } else {
+      verdictTitle = "ハイブリッド型（どちらでもOK）";
+      verdictBody =
+        "適性が拮抗しています。最初は振り飛車で迷子を減らしつつ、途中で居飛車も触る（または逆）など、両方を試して「楽しい方」を主戦型にすると良いです。";
+    }
+
+    elScoreline.innerHTML = `
+      <p style="margin:0;">
+        <span class="pill">振り飛車 ${furi}</span>
+        <span class="pill">居飛車 ${ibi}</span>
+        <span class="small">（15 / 15）</span>
+      </p>
+    `;
+    elVerdict.innerHTML = `<strong>${verdictTitle}</strong><br>${verdictBody}`;
+    elResult.style.display = "block";
+    elResult.scrollIntoView({behavior:"smooth", block:"start"});
+  }
+
+  // ====== 自動採点トリガー ======
+  // すべて回答済みになった瞬間に自動で calc() を呼ぶ
+  function autoCalcIfComplete(){
+    for (let i = 1; i <= items.length; i++){
+      const selected = document.querySelector(`input[name="q${i}"]:checked`);
+      if (!selected) {
+        // 未回答がある時は「結果を出さない」方針なのでstatusだけ更新
+        calc();
+        return;
+      }
+    }
+    // 全問回答済み
+    calc();
+  }
+
   // ====== UI生成 ======
   function render(){
     elQs.innerHTML = "";
@@ -130,78 +217,14 @@
       `;
       elQs.appendChild(card);
 
-      // タップ即時で計算したい場合はここでイベントを付けてもOK
-    });
-  }
-
-  function escapeHtml(s){
-    return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  }
-
-  // ====== 採点 ======
-  function calc(){
-    let furi = 0, ibi = 0;
-    let unanswered = [];
-
-    items.forEach((it, idx) => {
-      const qno = idx + 1;
-      const selected = document.querySelector(`input[name="q${qno}"]:checked`);
-      if (!selected) {
-        unanswered.push(qno);
-        return;
-      }
-      const ans = selected.value; // "yes" or "no"
-      // yesでpick側に+1、noで反対側に+1
-      const yesSide = it.pick;
-      const noSide = (it.pick === "furi") ? "ibi" : "furi";
-      const side = (ans === "yes") ? yesSide : noSide;
-      if (side === "furi") furi++;
-      else ibi++;
+      // ★回答されたら「全問回答済みか」をチェックして自動採点
+      card.querySelectorAll(`input[name="q${qno}"]`).forEach(r => {
+        r.addEventListener("change", autoCalcIfComplete);
+      });
     });
 
-    // ステータス表示
-    if (unanswered.length > 0) {
-      elStatus.style.display = "block";
-      elStatus.textContent = `未回答があります（Q${unanswered.join(", Q")}）。全問回答すると判定が安定します。`;
-    } else {
-      elStatus.style.display = "none";
-      elStatus.textContent = "";
-    }
-
-    const totalAnswered = furi + ibi;
-
-    // 判定（回答数が少ない場合も動くように割合で見る）
-    let verdictTitle = "";
-    let verdictBody = "";
-
-    const diff = furi - ibi; // +なら振り優勢
-    // 目安：15問なら差が3以上で「推奨」くらいの強さ
-    const strong = Math.max(2, Math.round(totalAnswered * 0.2)); // 回答数に応じて閾値可変
-
-    if (diff >= strong) {
-      verdictTitle = "振り飛車スタート推奨";
-      verdictBody =
-        "再現性・自分のペース・受け止めて反撃の快感が軸になりやすいタイプ。まずは「形を作って戦う」入口が挫折しにくいはず。";
-    } else if (diff <= -strong) {
-      verdictTitle = "居飛車スタート推奨";
-      verdictBody =
-        "変化対応・主体的に動く快感・展開の躍動感が軸になりやすいタイプ。まずは「主導権を取りに行く」入口が伸びやすいはず。";
-    } else {
-      verdictTitle = "ハイブリッド型（どちらでもOK）";
-      verdictBody =
-        "適性が拮抗しています。最初は振り飛車で迷子を減らしつつ、途中で居飛車も触る（または逆）など、両方を試して「楽しい方」を主戦型にすると良いです。";
-    }
-
-    elScoreline.innerHTML = `
-      <p style="margin:0;">
-        <span class="pill">振り飛車 ${furi}</span>
-        <span class="pill">居飛車 ${ibi}</span>
-        <span class="small">（回答数 ${totalAnswered} / 15）</span>
-      </p>
-    `;
-    elVerdict.innerHTML = `<strong>${verdictTitle}</strong><br>${verdictBody}`;
-    elResult.style.display = "block";
-    elResult.scrollIntoView({behavior:"smooth", block:"start"});
+    // 初期状態は未回答なのでstatusだけ表示しておく（任意）
+    calc();
   }
 
   function resetAll(){
@@ -210,9 +233,9 @@
     elStatus.style.display = "none";
     elStatus.textContent = "";
     window.scrollTo({top:0, behavior:"smooth"});
+    calc();
   }
 
-  document.getElementById("btnCalc").addEventListener("click", calc);
   document.getElementById("btnReset").addEventListener("click", resetAll);
 
   render();
